@@ -14,7 +14,7 @@ on:
         default: 'true'
 
 jobs:
-  # Always runs — CY2025 Release only (PR scope)
+  # Always runs — CY2025 Release only (manual baseline)
   macos-pr:
     name: '${{ matrix.os }} ${{ matrix.arch-type }} ${{ matrix.vfx-platform }}
       <qt=${{ matrix.qt-version }},
@@ -59,7 +59,7 @@ jobs:
           vfx-platform: ${{ matrix.vfx-platform }}
           skip_deps_cache: ${{ inputs.skip_deps_cache }}
 
-  # CY2025 Debug — runs when cmake files change or on full matrix
+  # CY2025 Debug — optional when the caller enables run_debug
   macos-debug:
     if: ${{ inputs.run_debug == 'true' }}
     name: '${{ matrix.os }} ${{ matrix.arch-type }} ${{ matrix.vfx-platform }}

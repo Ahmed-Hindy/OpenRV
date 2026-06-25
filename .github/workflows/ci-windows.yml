@@ -14,7 +14,7 @@ on:
         default: 'true'
 
 jobs:
-  # Always runs — CY2025 Release only (PR scope)
+  # Always runs — CY2025 Release only (manual baseline)
   windows-pr:
     name: 'Windows ${{ matrix.vfx-platform }}
       <${{ matrix.os }}
@@ -57,7 +57,7 @@ jobs:
           msvc-component: ${{ matrix.msvc-component }}
           msvc-compiler: ${{ matrix.msvc-compiler }}
 
-  # CY2025 Debug — runs when cmake files change or on full matrix
+  # CY2025 Debug — optional when the caller enables run_debug
   windows-debug:
     if: ${{ inputs.run_debug == 'true' }}
     name: 'Windows ${{ matrix.vfx-platform }}
@@ -101,7 +101,7 @@ jobs:
           msvc-component: ${{ matrix.msvc-component }}
           msvc-compiler: ${{ matrix.msvc-compiler }}
 
-  # CY2024 — full matrix only (daily/push/dispatch)
+  # CY2024 — optional when the caller enables full_matrix
   windows-cy2024:
     if: ${{ inputs.full_matrix == 'true' }}
     name: 'Windows ${{ matrix.vfx-platform }}
