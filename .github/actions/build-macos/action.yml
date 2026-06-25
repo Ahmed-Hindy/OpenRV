@@ -185,6 +185,19 @@ runs:
       run: cmake --install _build --prefix $(pwd)/_install --config ${{ inputs.build-type }}
       shell: bash
 
+    - name: Archive OpenRV install
+      run: |
+        mkdir -p _artifacts
+        tar -czf _artifacts/OpenRV-macOS-${{ inputs.arch-type }}-${{ inputs.vfx-platform }}-${{ inputs.build-type }}.tar.gz -C _install .
+      shell: bash
+
+    - name: Upload macOS install artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenRV-macOS-${{ inputs.arch-type }}-${{ inputs.vfx-platform }}-${{ inputs.build-type }}
+        path: _artifacts/OpenRV-macOS-${{ inputs.arch-type }}-${{ inputs.vfx-platform }}-${{ inputs.build-type }}.tar.gz
+        if-no-files-found: error
+
     - name: Save dependencies cache
       # Only save on push/schedule/workflow_dispatch so PRs use cache from main branch.
       if: inputs.skip_deps_cache == 'false' && steps.changes-in-deps.outputs.dependencies == 'false' && inputs.build-type == 'Release' && github.event_name != 'pull_request'
