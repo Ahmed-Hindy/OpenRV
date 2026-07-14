@@ -12,6 +12,23 @@ on:
       run_debug:
         type: string
         default: 'true'
+  workflow_dispatch:
+    inputs:
+      skip_deps_cache:
+        description: 'Skip dependency caching'
+        type: choice
+        options: ['false', 'true']
+        default: 'false'
+      full_matrix:
+        description: 'Also build the CY2024 Release and Debug variants'
+        type: choice
+        options: ['false', 'true']
+        default: 'false'
+      run_debug:
+        description: 'Also build the CY2025 Debug variant'
+        type: choice
+        options: ['false', 'true']
+        default: 'false'
 
 jobs:
   # Always runs — CY2025 Release only (manual baseline)
