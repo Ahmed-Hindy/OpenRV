@@ -27,6 +27,11 @@ on:
         required: false
         default: ''
         type: string
+      source_commit:
+        description: 'Commit that produced source_run_id; required when reusing artifacts from another run'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   linux:
@@ -81,7 +86,13 @@ jobs:
         id: source
         env:
           SOURCE_RUN_ID: ${{ inputs.source_run_id || github.run_id }}
-        run: echo "sha=$(gh api \"repos/$GH_REPO/actions/runs/$SOURCE_RUN_ID\" --jq .head_sha)" >> "$GITHUB_OUTPUT"
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          if [ -n "${{ inputs.source_run_id }}" ] && [ -z "$SOURCE_COMMIT" ]; then
+            echo 'source_commit is required when source_run_id is set.' >&2
+            exit 1
+          fi
+          echo "sha=${SOURCE_COMMIT:-$GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Package platform installs
         shell: bash
