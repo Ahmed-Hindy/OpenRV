@@ -77,8 +77,16 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.source_run_id || github.run_id }}
 
+      - name: Resolve artifact source commit
+        id: source
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id || github.run_id }}
+        run: echo "sha=$(gh api \"repos/$GH_REPO/actions/runs/$SOURCE_RUN_ID\" --jq .head_sha)" >> "$GITHUB_OUTPUT"
+
       - name: Package platform installs
         shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
@@ -99,7 +107,7 @@ jobs:
           run the OpenRV executable from the installed application directory.
 
           Build artifact: ${artifact_name}
-          Source commit: ${GITHUB_SHA}
+          Source commit: ${SOURCE_SHA}
           Build workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           Platform setup and usage documentation:
@@ -117,20 +125,38 @@ jobs:
 
       - name: Create prerelease
         if: ${{ inputs.prerelease }}
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
-          gh release create "$RELEASE_TAG" \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_TITLE" \
-            --prerelease \
-            --notes "Community-built OpenRV binaries for Windows, macOS, and Rocky Linux. See each archive's README.txt for scope and platform documentation."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \
+              -f sha="$SOURCE_SHA" \
+              -F force=true
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --prerelease
+          else
+            gh release create "$RELEASE_TAG" \
+              --target "$SOURCE_SHA" \
+              --title "$RELEASE_TITLE" \
+              --prerelease \
+              --notes "Community-built OpenRV binaries for Windows, macOS, and Rocky Linux. See each archive's README.txt for scope and platform documentation."
+          fi
 
       - name: Create release
         if: ${{ !inputs.prerelease }}
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
-          gh release create "$RELEASE_TAG" \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_TITLE" \
-            --notes "Community-built OpenRV binaries for Windows, macOS, and Rocky Linux. See each archive's README.txt for scope and platform documentation."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \
+              -f sha="$SOURCE_SHA" \
+              -F force=true
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE"
+          else
+            gh release create "$RELEASE_TAG" \
+              --target "$SOURCE_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes "Community-built OpenRV binaries for Windows, macOS, and Rocky Linux. See each archive's README.txt for scope and platform documentation."
+          fi
 
       - name: Upload release assets
         run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
