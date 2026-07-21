@@ -1,0 +1,122 @@
+name: Publish Fork Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Unique fork release tag, for example fork-2026.07.21.1'
+        required: true
+        type: string
+      release_title:
+        description: 'Human-readable release title'
+        required: true
+        default: 'OpenRV fork build'
+        type: string
+      prerelease:
+        description: 'Mark the release as a prerelease'
+        required: true
+        default: true
+        type: boolean
+      skip_deps_cache:
+        description: 'Skip dependency caching'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  linux:
+    uses: ./.github/workflows/ci-linux.yml
+    with:
+      skip_deps_cache: ${{ inputs.skip_deps_cache && 'true' || 'false' }}
+      full_matrix: 'false'
+      run_debug: 'false'
+
+  macos:
+    uses: ./.github/workflows/ci-macos.yml
+    with:
+      skip_deps_cache: ${{ inputs.skip_deps_cache && 'true' || 'false' }}
+      full_matrix: 'false'
+      run_debug: 'false'
+
+  windows:
+    uses: ./.github/workflows/ci-windows.yml
+    with:
+      skip_deps_cache: ${{ inputs.skip_deps_cache && 'true' || 'false' }}
+      full_matrix: 'false'
+      run_debug: 'false'
+
+  publish:
+    name: Package and publish release assets
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_TITLE: ${{ inputs.release_title }}
+      PRERELEASE: ${{ inputs.prerelease }}
+    steps:
+      - name: Download install artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: OpenRV-*
+          path: artifacts
+
+      - name: Package platform installs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+
+          while IFS= read -r -d '' artifact; do
+            artifact_name="$(basename "$artifact")"
+            case "$artifact_name" in
+              *codec-dependency-manifest)
+                continue
+                ;;
+            esac
+
+            cat > "$artifact/README.txt" <<EOF
+          OpenRV fork build: ${RELEASE_TAG}
+
+          This is a community build from Ahmed-Hindy/OpenRV, not an official
+          Academy Software Foundation OpenRV release. Extract this archive and
+          run the OpenRV executable from the installed application directory.
+
+          Build artifact: ${artifact_name}
+          Source commit: ${GITHUB_SHA}
+          Build workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Platform setup and usage documentation:
+          https://aswf-openrv.readthedocs.io/
+          EOF
+
+            (
+              cd "$artifact"
+              zip -r -0 "../../release-assets/${artifact_name}.zip" .
+            )
+          done < <(find artifacts -mindepth 1 -maxdepth 1 -type d -print0)
+
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          sha256sum release-assets/*.zip > release-assets/SHA256SUMS.txt
+
+      - name: Create prerelease
+        if: ${{ inputs.prerelease }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --prerelease \
+            --notes "Community-built OpenRV binaries for Windows, macOS, and Rocky Linux. See each archive's README.txt for scope and platform documentation."
+
+      - name: Create release
+        if: ${{ !inputs.prerelease }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes "Community-built OpenRV binaries for Windows, macOS, and Rocky Linux. See each archive's README.txt for scope and platform documentation."
+
+      - name: Upload release assets
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
