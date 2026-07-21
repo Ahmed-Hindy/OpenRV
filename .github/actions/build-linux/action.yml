@@ -292,3 +292,16 @@ runs:
     - name: Install OpenRV
       run: cmake --install _build --prefix $(pwd)/_install --config ${{ inputs.build-type }}
       shell: bash
+
+    - name: Archive OpenRV install
+      run: |
+        mkdir -p _artifacts
+        tar -czf _artifacts/OpenRV-Linux-Rocky${{ inputs.rocky-version }}-${{ inputs.vfx-platform }}-${{ inputs.build-type }}-x86_64.tar.gz -C _install .
+      shell: bash
+
+    - name: Upload Linux install artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenRV-Linux-Rocky${{ inputs.rocky-version }}-${{ inputs.vfx-platform }}-${{ inputs.build-type }}-x86_64
+        path: _artifacts/OpenRV-Linux-Rocky${{ inputs.rocky-version }}-${{ inputs.vfx-platform }}-${{ inputs.build-type }}-x86_64.tar.gz
+        if-no-files-found: error

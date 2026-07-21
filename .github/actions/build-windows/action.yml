@@ -198,3 +198,112 @@ runs:
     - name: Install OpenRV
       run: cmake --install _build --prefix $(pwd)/_install --config ${{ inputs.build-type }}
       shell: msys2 {0}
+
+    - name: Create codec and dependency manifest
+      run: |
+        $manifestDir = Join-Path $env:GITHUB_WORKSPACE "_artifacts"
+        New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+
+        $cachePath = Join-Path $env:GITHUB_WORKSPACE "_build/CMakeCache.txt"
+        if (!(Test-Path $cachePath)) {
+          throw "CMake cache not found at $cachePath"
+        }
+
+        $cacheValues = [ordered]@{}
+        Get-Content $cachePath | ForEach-Object {
+          if ($_ -match '^([^#/:=]+)(?::[^=]+)?=(.*)$') {
+            $cacheValues[$Matches[1]] = $Matches[2]
+          }
+        }
+
+        function Get-CacheValue {
+          param([string]$Name)
+          if ($cacheValues.Contains($Name)) {
+            return $cacheValues[$Name]
+          }
+          return $null
+        }
+
+        $ffmpegConfigOptions = @()
+        $ffmpegConfigOptionsRaw = Get-CacheValue "RV_FFMPEG_CONFIG_OPTIONS_CACHE"
+        if ($ffmpegConfigOptionsRaw) {
+          $ffmpegConfigOptions = @($ffmpegConfigOptionsRaw -split ';' | Where-Object { $_ })
+        }
+
+        $dependencyVersions = [ordered]@{}
+        $cacheValues.Keys |
+          Sort-Object |
+          ForEach-Object {
+            if ($_ -match '^RV_DEPS_(.+)_VERSION$') {
+              $dependencyName = $Matches[1].ToLowerInvariant()
+              $dependencyVersions[$dependencyName] = $cacheValues[$_]
+            }
+          }
+
+        $manifest = [ordered]@{
+          schema_version = 1
+          generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+          workflow = [ordered]@{
+            name = $env:GITHUB_WORKFLOW
+            run_id = $env:GITHUB_RUN_ID
+            run_attempt = $env:GITHUB_RUN_ATTEMPT
+            repository = $env:GITHUB_REPOSITORY
+            ref = $env:GITHUB_REF
+            sha = $env:GITHUB_SHA
+          }
+          build = [ordered]@{
+            os = "windows-2022"
+            arch = "x86_64"
+            generator = "Visual Studio 17 2022"
+            build_type = "${{ inputs.build-type }}"
+            vfx_platform = "${{ inputs.vfx-platform }}"
+            qt_version = "${{ inputs.qt-version }}"
+            python_version = "${{ inputs.python-version }}"
+            cmake_version = "${{ inputs.cmake-version }}"
+            msvc_component = "${{ inputs.msvc-component }}"
+            msvc_compiler = "${{ inputs.msvc-compiler }}"
+          }
+          ffmpeg = [ordered]@{
+            selected_major = Get-CacheValue "RV_FFMPEG"
+            version = Get-CacheValue "RV_DEPS_FFMPEG_VERSION"
+            configured_options = $ffmpegConfigOptions
+            disabled_decoders = @($ffmpegConfigOptions | Where-Object { $_ -like "--disable-decoder=*" } | ForEach-Object { $_.Replace("--disable-decoder=", "") })
+            disabled_encoders = @($ffmpegConfigOptions | Where-Object { $_ -like "--disable-encoder=*" } | ForEach-Object { $_.Replace("--disable-encoder=", "") })
+            disabled_parsers = @($ffmpegConfigOptions | Where-Object { $_ -like "--disable-parser=*" } | ForEach-Object { $_.Replace("--disable-parser=", "") })
+            disabled_filters = @($ffmpegConfigOptions | Where-Object { $_ -like "--disable-filter=*" } | ForEach-Object { $_.Replace("--disable-filter=", "") })
+            disabled_protocols = @($ffmpegConfigOptions | Where-Object { $_ -like "--disable-protocol=*" } | ForEach-Object { $_.Replace("--disable-protocol=", "") })
+            external_libraries = @("libdav1d")
+          }
+          optional_sdks = [ordered]@{
+            blackmagic_decklink = [ordered]@{
+              enabled = [bool](Get-CacheValue "RV_DEPS_BMD_VERSION")
+              version = Get-CacheValue "RV_DEPS_BMD_VERSION"
+            }
+            apple_prores = [ordered]@{
+              enabled = [bool](Get-CacheValue "RV_DEPS_APPLE_PRORES_VERSION")
+              version = Get-CacheValue "RV_DEPS_APPLE_PRORES_VERSION"
+            }
+          }
+          dependency_versions = $dependencyVersions
+        }
+
+        $manifestPath = Join-Path $manifestDir "openrv-windows-codec-dependency-manifest.json"
+        $manifest | ConvertTo-Json -Depth 8 | Set-Content -Path $manifestPath -Encoding UTF8
+        Get-Content $manifestPath
+      shell: powershell
+
+    - name: Upload Windows install artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenRV-Windows-${{ inputs.vfx-platform }}-${{ inputs.build-type }}-x86_64
+        path: |
+          _install/**
+          _artifacts/openrv-windows-codec-dependency-manifest.json
+        if-no-files-found: error
+
+    - name: Upload codec and dependency manifest artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenRV-Windows-${{ inputs.vfx-platform }}-${{ inputs.build-type }}-codec-dependency-manifest
+        path: _artifacts/openrv-windows-codec-dependency-manifest.json
+        if-no-files-found: error
